@@ -1,95 +1,72 @@
-import Image from 'next/image'
-import styles from './page.module.css'
+import { supabase } from "@/utils/supabaseClient";
+import { HypixelPlayer } from "@/utils/hypixelPlayer";
+import "./globals.css";
 
-export default function Home() {
-  return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>src/app/page.tsx</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+async function getGoals() {
+    const { data, error } = await supabase.from("goals").select("*");
+    if (error) return [];
+    return data;
+}
 
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+async function updateGoal(goal: string, value: number) {
+    const { data, error } = await supabase.from("goals").update({ value: value }).eq("name", goal);
+    if (error) return;
+    return data;
+}
 
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
+async function updateHypixelGoals() {
+    const player = new HypixelPlayer("8bc4ea42dae4422aa2d7ae2b0415f802");
+    await player.fetch();
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
+    const stats = player.getStats();
+    for (const goal in stats) {
+        await updateGoal(goal, stats[goal as keyof typeof stats]);
+    }
+}
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
+const goalsOrder = ["subscribers", "bedwars_level", "bedwars_final_kills", "bedwars_wins", "bedwars_fkdr", "duels_uhc_wins"];
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
+function sortGoals(a: any, b: any) {
+    return goalsOrder.indexOf(a.name) - goalsOrder.indexOf(b.name);
+}
+
+export const revalidate = 0;
+
+export default async function Home() {
+    const goals = await getGoals();
+    goals.sort(sortGoals);
+
+    for (const goal of goals) {
+        goal.updated_at = new Date(goal.updated_at);
+
+        if (typeof goal.value == "number" && goal.value.toString().includes(".")) {
+            goal.value = goal.value.toFixed(2);
+        } else if (typeof goal.value == "number") {
+            goal.value = goal.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            goal.target = goal.target.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+    }
+
+    for (const goal of goals) {
+        if (goal.name == "subscribers") continue;
+        if (new Date().getTime() - goal.updated_at.getTime() > 86400000) {
+            await updateHypixelGoals();
+            break;
+        }
+    }
+
+    return (
+        <main>
+            <ul>
+                {goals.map((goal) => (
+                    <div key={goal.id} className="card">
+                        <h2>{goal.display_name}</h2>
+                        <p>
+                            {goal.value} / {goal.target}
+                        </p>
+                    </div>
+                ))}
+            </ul>
+        </main>
+    );
 }
